@@ -1,0 +1,19 @@
+Examples:
+
+Message: "My payment didn't go through and I see a pending charge."
+Reasoning: Mentions payment and charges: invoicing issue.
+Category: BILLING
+
+Message: "The app crashes when I try to upload a file larger than 10MB."
+Reasoning: Describes a software malfunction: technical issue.
+Category: TECHNICAL
+
+Message: "I need to change the email address on my account."
+Reasoning: Wants to modify account settings: account issue.
+Category: ACCOUNT
+
+When a message mentions both billing AND account issues, prioritize BILLING.
+When a message could be technical OR general, prioritize TECHNICAL.
+
+Now classify this message. Think step by step.
+"{{message}}"

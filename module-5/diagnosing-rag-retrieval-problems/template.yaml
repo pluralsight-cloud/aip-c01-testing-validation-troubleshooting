@@ -1,0 +1,111 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Resources:
+  KBSourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'rag-chunking-source-${AWS::AccountId}-${AWS::Region}'
+
+  VectorBucket:
+    Type: AWS::S3Vectors::VectorBucket
+    Properties:
+      VectorBucketName: !Sub 'rag-chunking-vectors-${AWS::AccountId}-${AWS::Region}'
+
+  VectorIndex:
+    Type: AWS::S3Vectors::Index
+    Properties:
+      VectorBucketName: !Sub 'rag-chunking-vectors-${AWS::AccountId}-${AWS::Region}'
+      IndexName: rag-chunking-index
+      DataType: float32
+      Dimension: 1024
+      DistanceMetric: cosine
+      MetadataConfiguration:
+        NonFilterableMetadataKeys:
+          - AMAZON_BEDROCK_TEXT
+          - AMAZON_BEDROCK_METADATA
+    DependsOn: VectorBucket
+
+  KBRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-KBRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/*'
+      Policies:
+        - PolicyName: Embedding
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2:0'
+        - PolicyName: S3AndVectors
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt KBSourceBucket.Arn
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub '${KBSourceBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - s3vectors:GetVectors
+                  - s3vectors:PutVectors
+                  - s3vectors:DeleteVectors
+                  - s3vectors:QueryVectors
+                  - s3vectors:GetIndex
+                Resource: !Sub '${VectorBucket.VectorBucketArn}/index/*'
+
+  KnowledgeBase:
+    Type: AWS::Bedrock::KnowledgeBase
+    Properties:
+      Name: !Sub '${AWS::StackName}-kb'
+      Description: KB for diagnosing chunking problems
+      RoleArn: !GetAtt KBRole.Arn
+      KnowledgeBaseConfiguration:
+        Type: VECTOR
+        VectorKnowledgeBaseConfiguration:
+          EmbeddingModelArn: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2:0'
+      StorageConfiguration:
+        Type: S3_VECTORS
+        S3VectorsConfiguration:
+          IndexArn: !GetAtt VectorIndex.IndexArn
+          VectorBucketArn: !GetAtt VectorBucket.VectorBucketArn
+
+  # Data source with deliberately small fixed-size chunks (100 tokens, 5% overlap)
+  # to produce poor retrieval on multi-paragraph answers
+  DataSourceFixedSize:
+    Type: AWS::Bedrock::DataSource
+    Properties:
+      KnowledgeBaseId: !Ref KnowledgeBase
+      Name: !Sub '${AWS::StackName}-fixed-size'
+      DataSourceConfiguration:
+        Type: S3
+        S3Configuration:
+          BucketArn: !GetAtt KBSourceBucket.Arn
+      VectorIngestionConfiguration:
+        ChunkingConfiguration:
+          ChunkingStrategy: FIXED_SIZE
+          FixedSizeChunkingConfiguration:
+            MaxTokens: 100
+            OverlapPercentage: 5
+
+Outputs:
+  KnowledgeBaseId:
+    Value: !Ref KnowledgeBase
+  DataSourceId:
+    Value: !GetAtt DataSourceFixedSize.DataSourceId
+  KBSourceBucketName:
+    Value: !Ref KBSourceBucket

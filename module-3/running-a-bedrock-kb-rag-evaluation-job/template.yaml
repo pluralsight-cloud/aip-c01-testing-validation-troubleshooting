@@ -1,0 +1,171 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Resources:
+  KBSourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-kb-source'
+
+  VectorBucket:
+    Type: AWS::S3Vectors::VectorBucket
+    Properties:
+      VectorBucketName: !Sub '${AWS::StackName}-vectors'
+
+  VectorIndex:
+    Type: AWS::S3Vectors::Index
+    Properties:
+      VectorBucketName: !Sub '${AWS::StackName}-vectors'
+      IndexName: rag-job-index
+      DataType: float32
+      Dimension: 1024
+      DistanceMetric: cosine
+      MetadataConfiguration:
+        NonFilterableMetadataKeys:
+          - AMAZON_BEDROCK_TEXT
+          - AMAZON_BEDROCK_METADATA
+    DependsOn: VectorBucket
+
+  EvalBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-eval'
+
+  KBRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-KBRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/*'
+      Policies:
+        - PolicyName: BedrockEmbedding
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2:0'
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt KBSourceBucket.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub '${KBSourceBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - s3vectors:GetVectors
+                  - s3vectors:PutVectors
+                  - s3vectors:DeleteVectors
+                  - s3vectors:QueryVectors
+                  - s3vectors:GetIndex
+                Resource:
+                  - !Sub '${VectorBucket.VectorBucketArn}/index/*'
+
+  EvalServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-EvalRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:evaluation-job/*'
+      Policies:
+        - PolicyName: BedrockModelInvoke
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:CreateModelInvocationJob
+                  - bedrock:StopModelInvocationJob
+                  - bedrock:GetInferenceProfile
+                Resource:
+                  - 'arn:aws:bedrock:*::foundation-model/*'
+                  - !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*'
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:PutObject
+                  - s3:GetBucketLocation
+                  - s3:AbortMultipartUpload
+                  - s3:ListBucketMultipartUploads
+                Resource:
+                  - !GetAtt EvalBucket.Arn
+                  - !Sub '${EvalBucket.Arn}/*'
+        - PolicyName: KBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:Retrieve
+                  - bedrock:RetrieveAndGenerate
+                Resource:
+                  - !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/${KnowledgeBase}'
+
+  KnowledgeBase:
+    Type: AWS::Bedrock::KnowledgeBase
+    Properties:
+      Name: rag-evaluation-kb
+      Description: Knowledge Base for RAG evaluation
+      RoleArn: !GetAtt KBRole.Arn
+      KnowledgeBaseConfiguration:
+        Type: VECTOR
+        VectorKnowledgeBaseConfiguration:
+          EmbeddingModelArn: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2:0'
+      StorageConfiguration:
+        Type: S3_VECTORS
+        S3VectorsConfiguration:
+          IndexArn: !GetAtt VectorIndex.IndexArn
+          VectorBucketArn: !GetAtt VectorBucket.VectorBucketArn
+
+  KBDataSource:
+    Type: AWS::Bedrock::DataSource
+    Properties:
+      KnowledgeBaseId: !Ref KnowledgeBase
+      Name: !Sub '${AWS::StackName}-datasource'
+      DataSourceConfiguration:
+        Type: S3
+        S3Configuration:
+          BucketArn: !GetAtt KBSourceBucket.Arn
+
+Outputs:
+  KnowledgeBaseId:
+    Value: !Ref KnowledgeBase
+  KBSourceBucketName:
+    Value: !Ref KBSourceBucket
+  EvalBucketName:
+    Value: !Ref EvalBucket
+  EvalServiceRoleArn:
+    Value: !GetAtt EvalServiceRole.Arn

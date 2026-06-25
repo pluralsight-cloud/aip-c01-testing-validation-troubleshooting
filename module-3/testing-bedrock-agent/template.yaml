@@ -1,0 +1,414 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Resources:
+  KBSourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'agent-eval-kb-source-${AWS::AccountId}-${AWS::Region}'
+
+  VectorBucket:
+    Type: AWS::S3Vectors::VectorBucket
+    Properties:
+      VectorBucketName: !Sub 'agent-eval-vectors-${AWS::AccountId}-${AWS::Region}'
+
+  VectorIndex:
+    Type: AWS::S3Vectors::Index
+    Properties:
+      VectorBucketName: !Sub 'agent-eval-vectors-${AWS::AccountId}-${AWS::Region}'
+      IndexName: agent-eval-index
+      DataType: float32
+      Dimension: 1024
+      DistanceMetric: cosine
+      MetadataConfiguration:
+        NonFilterableMetadataKeys:
+          - AMAZON_BEDROCK_TEXT
+          - AMAZON_BEDROCK_METADATA
+    DependsOn: VectorBucket
+
+  KBRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-KBRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/*'
+      Policies:
+        - PolicyName: Embedding
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2:0'
+        - PolicyName: S3AndVectors
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt KBSourceBucket.Arn
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub '${KBSourceBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - s3vectors:GetVectors
+                  - s3vectors:PutVectors
+                  - s3vectors:DeleteVectors
+                  - s3vectors:QueryVectors
+                  - s3vectors:GetIndex
+                Resource: !Sub '${VectorBucket.VectorBucketArn}/index/*'
+
+  KnowledgeBase:
+    Type: AWS::Bedrock::KnowledgeBase
+    Properties:
+      Name: !Sub '${AWS::StackName}-kb'
+      Description: AWS services knowledge base for agent evaluation demo
+      RoleArn: !GetAtt KBRole.Arn
+      KnowledgeBaseConfiguration:
+        Type: VECTOR
+        VectorKnowledgeBaseConfiguration:
+          EmbeddingModelArn: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-text-v2:0'
+      StorageConfiguration:
+        Type: S3_VECTORS
+        S3VectorsConfiguration:
+          IndexArn: !GetAtt VectorIndex.IndexArn
+          VectorBucketArn: !GetAtt VectorBucket.VectorBucketArn
+
+  KBDataSource:
+    Type: AWS::Bedrock::DataSource
+    Properties:
+      KnowledgeBaseId: !Ref KnowledgeBase
+      Name: !Sub '${AWS::StackName}-datasource'
+      DataSourceConfiguration:
+        Type: S3
+        S3Configuration:
+          BucketArn: !GetAtt KBSourceBucket.Arn
+
+  ServiceInfoFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  ServiceInfoFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-ServiceInfo'
+      Runtime: python3.13
+      Handler: index.handler
+      Role: !GetAtt ServiceInfoFunctionRole.Arn
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import json
+
+          PRICING = {
+              "s3": {"storage_gb_month": 0.023, "get_per_1000": 0.0004, "put_per_1000": 0.005, "free_tier": "5 GB for 12 months"},
+              "lambda": {"per_request": 0.0000002, "gb_second": 0.0000166667, "free_tier": "1M requests/month"},
+              "dynamodb": {"wcu_hour": 0.00065, "rcu_hour": 0.00013, "storage_gb_month": 0.25, "free_tier": "25 GB storage, 25 WCU, 25 RCU"},
+          }
+          LIMITS = {
+              "s3": {"max_object_size": "5 TB", "max_buckets_per_account": 100, "max_parts_multipart": 10000},
+              "lambda": {"max_memory_mb": 10240, "max_timeout_seconds": 900, "max_package_size_mb": 250, "max_concurrent_executions": 1000},
+              "dynamodb": {"max_item_size_kb": 400, "max_gsi_per_table": 20, "max_partition_key_size_kb": 2},
+          }
+
+          def handler(event, context):
+              agent = event.get("agent", {})
+              action = event.get("actionGroup", "")
+              function = event.get("function", "")
+              params = {p["name"]: p["value"] for p in event.get("parameters", [])}
+              service = params.get("service_name", "").lower()
+
+              if function == "get_service_pricing":
+                  data = PRICING.get(service, {})
+                  body = json.dumps(data) if data else f"No pricing data for {service}"
+              elif function == "get_service_limits":
+                  data = LIMITS.get(service, {})
+                  body = json.dumps(data) if data else f"No limits data for {service}"
+              else:
+                  body = f"Unknown function: {function}"
+
+              return {
+                  "messageVersion": "1.0",
+                  "response": {
+                      "actionGroup": action,
+                      "function": function,
+                      "functionResponse": {"responseBody": {"TEXT": {"body": body}}},
+                  },
+              }
+
+  ServiceInfoPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ServiceInfoFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: bedrock.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:agent/*'
+
+  ArchitectureFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  ArchitectureFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-Architecture'
+      Runtime: python3.13
+      Handler: index.handler
+      Role: !GetAtt ArchitectureFunctionRole.Arn
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import json
+
+          def handler(event, context):
+              action = event.get("actionGroup", "")
+              function = event.get("function", "")
+              params = {p["name"]: p["value"] for p in event.get("parameters", [])}
+
+              if function == "estimate_monthly_cost":
+                  services = [s.strip() for s in params.get("services", "").split(",")]
+                  rps = int(params.get("requests_per_second", 100))
+                  storage = int(params.get("storage_gb", 10))
+                  estimates = {}
+                  for svc in services:
+                      s = svc.lower()
+                      if s == "s3":
+                          estimates[s] = round(storage * 0.023 + rps * 86400 * 30 * 0.0000004, 2)
+                      elif s == "lambda":
+                          estimates[s] = round(rps * 86400 * 30 * 0.0000002 + rps * 86400 * 30 * 0.5 * 0.0000166667, 2)
+                      elif s == "dynamodb":
+                          estimates[s] = round(rps * 0.00065 * 730 + storage * 0.25, 2)
+                      else:
+                          estimates[s] = "unknown"
+                  estimates["total"] = round(sum(v for v in estimates.values() if isinstance(v, (int, float))), 2)
+                  body = json.dumps(estimates)
+
+              elif function == "validate_architecture":
+                  services = [s.strip().lower() for s in params.get("services", "").split(",")]
+                  use_case = params.get("use_case", "")
+                  issues = []
+                  if "dynamodb" in services and "s3" not in services:
+                      issues.append("Consider S3 for large object storage — DynamoDB items are limited to 400 KB")
+                  if "lambda" in services and "dynamodb" in services and "s3" not in services:
+                      issues.append("Add S3 for Lambda deployment packages and DynamoDB backups")
+                  if len(services) == 1:
+                      issues.append("Single-service architectures lack resilience — consider adding complementary services")
+                  if not issues:
+                      issues.append("Architecture looks reasonable for the described use case")
+                  body = json.dumps({"use_case": use_case, "services": services, "findings": issues})
+              else:
+                  body = f"Unknown function: {function}"
+
+              return {
+                  "messageVersion": "1.0",
+                  "response": {
+                      "actionGroup": action,
+                      "function": function,
+                      "functionResponse": {"responseBody": {"TEXT": {"body": body}}},
+                  },
+              }
+
+  ArchitecturePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ArchitectureFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: bedrock.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:agent/*'
+
+  AgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-AgentRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:agent/*'
+      Policies:
+        - PolicyName: InvokeModel
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource:
+                  - 'arn:aws:bedrock:*::foundation-model/*'
+                  - !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*'
+              - Effect: Allow
+                Action: bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - 'arn:aws:bedrock:*::foundation-model/*'
+                  - !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*'
+              - Effect: Allow
+                Action: bedrock:GetInferenceProfile
+                Resource: !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*'
+        - PolicyName: KBRetrieve
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: bedrock:Retrieve
+                Resource: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:knowledge-base/${KnowledgeBase}'
+        - PolicyName: InvokeLambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !GetAtt ServiceInfoFunction.Arn
+                  - !GetAtt ArchitectureFunction.Arn
+        - PolicyName: CloudWatchMetrics
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: AWS/Bedrock/Agents
+
+  Agent:
+    Type: AWS::Bedrock::Agent
+    Properties:
+      AgentName: !Sub '${AWS::StackName}-agent'
+      AgentResourceRoleArn: !GetAtt AgentRole.Arn
+      FoundationModel: us.amazon.nova-2-lite-v1:0
+      AutoPrepare: true
+      Instruction: |
+        You are an AWS Solutions Architect assistant. You help users understand AWS services,
+        estimate costs, and validate architectures.
+
+        You have access to:
+        1. A knowledge base with AWS service documentation — use it to answer questions about
+           what services do, their features, and best practices.
+        2. A ServiceInfo action group — use it to look up current pricing and service limits.
+        3. An Architecture action group — use it to estimate monthly costs and validate
+           architecture designs.
+
+        For multi-step tasks:
+        - First consult the knowledge base for service background.
+        - Then use ServiceInfo to get specific pricing or limits.
+        - Then use Architecture to estimate costs or validate the design.
+        - Always explain your reasoning at each step.
+
+        If you don't have enough information, ask the user for clarification.
+
+      KnowledgeBases:
+        - KnowledgeBaseId: !Ref KnowledgeBase
+          Description: >
+            AWS service documentation covering S3, Lambda, and DynamoDB.
+            Use this to answer questions about service features, use cases, and best practices.
+          KnowledgeBaseState: ENABLED
+
+      ActionGroups:
+        - ActionGroupName: ServiceInfo
+          Description: >
+            Look up AWS service pricing and service limits/quotas.
+            Use get_service_pricing to retrieve pricing details for a service.
+            Use get_service_limits to retrieve quotas and limits for a service.
+          ActionGroupExecutor:
+            Lambda: !GetAtt ServiceInfoFunction.Arn
+          FunctionSchema:
+            Functions:
+              - Name: get_service_pricing
+                Description: Get current pricing information for an AWS service
+                Parameters:
+                  service_name:
+                    Description: 'AWS service name: s3, lambda, or dynamodb'
+                    Type: string
+                    Required: true
+              - Name: get_service_limits
+                Description: Get service quotas and limits for an AWS service
+                Parameters:
+                  service_name:
+                    Description: 'AWS service name: s3, lambda, or dynamodb'
+                    Type: string
+                    Required: true
+
+        - ActionGroupName: Architecture
+          Description: >
+            Estimate monthly costs for multi-service architectures and validate
+            architecture designs against best practices.
+          ActionGroupExecutor:
+            Lambda: !GetAtt ArchitectureFunction.Arn
+          FunctionSchema:
+            Functions:
+              - Name: estimate_monthly_cost
+                Description: Estimate monthly AWS cost for a set of services given usage parameters
+                Parameters:
+                  services:
+                    Description: Comma-separated list of AWS services (e.g. s3,lambda,dynamodb)
+                    Type: string
+                    Required: true
+                  requests_per_second:
+                    Description: Expected requests per second
+                    Type: integer
+                    Required: true
+                  storage_gb:
+                    Description: Expected storage in GB
+                    Type: integer
+                    Required: true
+              - Name: validate_architecture
+                Description: Validate an architecture design and identify potential issues
+                Parameters:
+                  services:
+                    Description: Comma-separated list of AWS services in the architecture
+                    Type: string
+                    Required: true
+                  use_case:
+                    Description: Brief description of the use case
+                    Type: string
+                    Required: true
+
+        - ActionGroupName: UserInput
+          ParentActionGroupSignature: AMAZON.UserInput
+
+Outputs:
+  AgentId:
+    Value: !Ref Agent
+  AgentName:
+    Value: !Sub '${AWS::StackName}-agent'
+  KnowledgeBaseId:
+    Value: !Ref KnowledgeBase
+  KBSourceBucketName:
+    Value: !Ref KBSourceBucket

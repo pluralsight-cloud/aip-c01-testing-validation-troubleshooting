@@ -1,0 +1,6 @@
+Successful invocation — longer prompt
+aws bedrock-runtime converse \
+  --model-id eu.amazon.nova-micro-v1:0 \
+  --messages '[{"role":"user","content":[{"text":"You are an AWS solutions architect. A customer wants to build a serverless web application that handles 10,000 requests per second. The application needs to store user profiles, process images uploaded by users, and send email notifications when certain events occur. The customer also needs a CI/CD pipeline for automated deployments. Please provide a detailed architecture recommendation covering all AWS services needed, their configurations, estimated costs, and best practices for each component. Include considerations for security, monitoring, and disaster recovery."}]}]' \
+  --inference-config '{"maxTokens":1000}' \
+  --region eu-central-1

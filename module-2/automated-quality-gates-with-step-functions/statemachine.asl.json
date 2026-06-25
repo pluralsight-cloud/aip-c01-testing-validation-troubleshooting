@@ -1,0 +1,139 @@
+{
+  "QueryLanguage": "JSONata",
+  "Comment": "Quality Gate: Create Bedrock evaluation job, poll until complete, check scores against threshold, approve or reject.",
+  "StartAt": "CreateEvaluationJob",
+  "States": {
+    "CreateEvaluationJob": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:bedrock:createEvaluationJob",
+      "Arguments": {
+        "JobName": "{% 'quality-gate-' & $states.context.Execution.Name %}",
+        "RoleArn": "${BedrockEvalServiceRoleArn}",
+        "ApplicationType": "ModelEvaluation",
+        "EvaluationConfig": {
+          "Automated": {
+            "DatasetMetricConfigs": [
+              {
+                "TaskType": "General",
+                "Dataset": {
+                  "Name": "quality-gate-dataset",
+                  "DatasetLocation": {
+                    "S3Uri": "${PromptDatasetS3Uri}"
+                  }
+                },
+                "MetricNames": [
+                  "Builtin.Correctness",
+                  "Builtin.Completeness",
+                  "Builtin.Coherence"
+                ]
+              }
+            ],
+            "EvaluatorModelConfig": {
+              "BedrockEvaluatorModels": [
+                {
+                  "ModelIdentifier": "${EvaluatorModelId}"
+                }
+              ]
+            }
+          }
+        },
+        "InferenceConfig": {
+          "Models": [
+            {
+              "BedrockModel": {
+                "ModelIdentifier": "${GeneratorModelId}",
+                "InferenceParams": "{}"
+              }
+            }
+          ]
+        },
+        "OutputDataConfig": {
+          "S3Uri": "{% 's3://${EvalBucketName}/eval-results/quality-gate-' & $states.context.Execution.Name & '/' %}"
+        }
+      },
+      "Assign": {
+        "jobArn": "{% $states.result.JobArn %}",
+        "outputUri": "{% 's3://${EvalBucketName}/eval-results/quality-gate-' & $states.context.Execution.Name & '/' %}"
+      },
+      "Next": "WaitForEvaluation"
+    },
+
+    "WaitForEvaluation": {
+      "Type": "Wait",
+      "Seconds": 60,
+      "Next": "CheckEvaluationStatus"
+    },
+
+    "CheckEvaluationStatus": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:bedrock:getEvaluationJob",
+      "Arguments": {
+        "JobIdentifier": "{% $jobArn %}"
+      },
+      "Assign": {
+        "evalStatus": "{% $states.result.Status %}"
+      },
+      "Next": "IsEvaluationComplete"
+    },
+
+    "IsEvaluationComplete": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Condition": "{% $evalStatus = 'Completed' %}",
+          "Next": "CheckResults"
+        },
+        {
+          "Condition": "{% $evalStatus = 'Failed' %}",
+          "Next": "EvaluationFailed"
+        },
+        {
+          "Condition": "{% $evalStatus = 'Stopped' %}",
+          "Next": "EvaluationFailed"
+        }
+      ],
+      "Default": "WaitForEvaluation"
+    },
+
+    "CheckResults": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Arguments": {
+        "FunctionName": "${CheckResultsFunctionArn}",
+        "Payload": {
+          "outputUri": "{% $outputUri %}"
+        }
+      },
+      "Output": "{% $states.result.Payload %}",
+      "Next": "QualityGateDecision"
+    },
+
+    "QualityGateDecision": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Condition": "{% $states.input.decision = 'APPROVE' %}",
+          "Next": "DeploymentApproved"
+        }
+      ],
+      "Default": "DeploymentRejected"
+    },
+
+    "DeploymentApproved": {
+      "Type": "Succeed",
+      "Comment": "Model passed quality gate. Proceed with deployment."
+    },
+
+    "DeploymentRejected": {
+      "Type": "Fail",
+      "Error": "QualityGateFailed",
+      "Cause": "Model evaluation scores below threshold. Deployment rejected."
+    },
+
+    "EvaluationFailed": {
+      "Type": "Fail",
+      "Error": "EvaluationJobFailed",
+      "Cause": "Bedrock evaluation job failed or was stopped."
+    }
+  }
+}

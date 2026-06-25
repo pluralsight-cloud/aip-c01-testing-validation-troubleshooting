@@ -1,0 +1,19 @@
+AWS Networking: VPC Peering vs Transit Gateway vs PrivateLink
+
+Choosing the right networking connectivity option depends on your architecture requirements. Each option serves different use cases and has distinct limitations.
+
+VPC Peering for Direct Connections
+
+VPC Peering creates a direct network route between two VPCs, allowing instances in either VPC to communicate as if they were in the same network. Peering works across accounts and across Regions. Traffic stays on the AWS backbone and never traverses the public internet. However, VPC Peering has a critical limitation: it is not transitive. If VPC A is peered with VPC B, and VPC B is peered with VPC C, VPC A cannot communicate with VPC C through VPC B. You would need a separate peering connection between A and C. This means that in a network with many VPCs, the number of peering connections grows quadratically, making it impractical for large-scale architectures. VPC Peering also does not support overlapping CIDR ranges — if two VPCs have overlapping IP address ranges, they cannot be peered. There is no bandwidth limit on a peering connection, and there is no single point of failure. Pricing is based on data transfer, with no hourly charges for the peering connection itself.
+
+Transit Gateway for Hub-and-Spoke Architectures
+
+AWS Transit Gateway solves the scalability problem of VPC Peering by acting as a central hub that connects multiple VPCs and on-premises networks. Instead of creating individual peering connections between every pair of VPCs, each VPC connects to the Transit Gateway, and the Transit Gateway routes traffic between them. This reduces the number of connections from N-squared to N. Transit Gateway supports transitive routing, which means VPC A can communicate with VPC C through the Transit Gateway even without a direct connection. It also supports route tables for fine-grained control over which VPCs can communicate with each other. Transit Gateway can connect to VPN connections and AWS Direct Connect gateways, making it the central point for hybrid connectivity. It supports up to 5,000 attachments per gateway and can handle up to 50 Gbps of bandwidth per VPC attachment. However, Transit Gateway introduces an hourly charge per attachment plus data processing charges, making it more expensive than VPC Peering for simple two-VPC scenarios.
+
+AWS PrivateLink for Service-Level Access
+
+AWS PrivateLink provides private connectivity between VPCs and services without exposing traffic to the public internet. Unlike VPC Peering and Transit Gateway, which provide network-level connectivity, PrivateLink operates at the service level. You create an endpoint in your VPC that connects to a specific service in another VPC. The service provider creates a Network Load Balancer, and the consumer creates a VPC endpoint that connects to it. Traffic flows from the consumer VPC through the endpoint to the NLB in the provider VPC. PrivateLink supports overlapping CIDR ranges because it uses private IP addresses from the consumer's VPC subnet. It is the recommended approach for SaaS providers who want to offer their services to customers without requiring VPC Peering or public internet access. PrivateLink is also how you access many AWS services privately — services like S3, DynamoDB, and SageMaker offer VPC endpoints powered by PrivateLink.
+
+When to Use Each Option
+
+Use VPC Peering when you need full bidirectional network access between two VPCs with non-overlapping CIDRs and you have a small number of VPCs. Use Transit Gateway when you have many VPCs that need to communicate, when you need transitive routing, or when you need to connect VPCs with on-premises networks through a central hub. Use PrivateLink when you want to expose a specific service to other VPCs without granting full network access, when you have overlapping CIDRs, or when you are building a SaaS product that customers access from their own VPCs.

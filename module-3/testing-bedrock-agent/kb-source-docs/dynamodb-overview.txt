@@ -1,0 +1,24 @@
+Amazon DynamoDB is a fully managed NoSQL database service that provides fast and predictable performance with seamless scalability. DynamoDB supports key-value and document data models.
+
+Key features:
+- Tables, items, and attributes: Data is stored in tables. Each item is uniquely identified by a primary key.
+- Primary key types: Partition key only, or partition key + sort key (composite).
+- Secondary indexes: Global Secondary Indexes (GSI) — up to 20 per table. Local Secondary Indexes (LSI) — up to 5 per table, must be created at table creation time.
+- Capacity modes: On-demand (pay per request) or Provisioned (specify read/write capacity units).
+- Item size limit: 400 KB maximum per item.
+- DynamoDB Streams: Capture item-level changes for event-driven processing.
+- Global Tables: Multi-region, multi-active replication for globally distributed applications.
+- DAX (DynamoDB Accelerator): In-memory cache for microsecond read latency.
+- Point-in-time recovery: Continuous backups with restore to any second in the last 35 days.
+- Encryption at rest: Enabled by default using AWS owned keys, or use KMS customer managed keys.
+- TTL (Time to Live): Automatically delete expired items.
+
+Common use cases: web and mobile backends, gaming leaderboards, IoT data, session management, shopping carts, and real-time analytics.
+
+Best practices:
+- Design for access patterns first — choose partition keys that distribute traffic evenly.
+- Use composite sort keys for flexible querying.
+- Use on-demand capacity for unpredictable workloads, provisioned for steady-state.
+- Enable point-in-time recovery for critical tables.
+- Use DynamoDB Streams with Lambda for event-driven architectures.
+- Monitor with CloudWatch metrics: ConsumedReadCapacityUnits, ConsumedWriteCapacityUnits, ThrottledRequests.

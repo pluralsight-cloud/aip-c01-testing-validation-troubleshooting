@@ -1,0 +1,17 @@
+# Easy
+I was charged twice for my last invoice and need a refund.
+
+# Easy
+I'm getting a 502 error when I try to access the dashboard.
+
+# Ambiguous — BILLING or ACCOUNT?
+I can't see my subscription status and my card was declined.
+
+# Ambiguous — TECHNICAL or GENERAL?
+Is there a way to export my data to a CSV file?
+
+# Ambiguous — ACCOUNT or TECHNICAL?
+I'm locked out after changing my password yesterday.
+
+# Easy
+Do you offer a free trial?

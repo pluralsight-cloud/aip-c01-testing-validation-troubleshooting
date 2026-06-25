@@ -1,0 +1,14 @@
+# 1. Clear match
+What is the maximum number of read replicas Aurora supports?
+
+# 2. Cross-section
+What options do I have if my VPCs have overlapping CIDR ranges?
+
+# 3. Comparison
+How does Aurora failover compare to standard RDS Multi-AZ?
+
+# 4. No relevant content
+How do I configure an Amazon ElastiCache Redis cluster for high availability?
+
+# 5. Ambiguous
+What is the best way to connect two AWS accounts?

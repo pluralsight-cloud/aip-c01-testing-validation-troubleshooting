@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Resources:
+  EvalBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'bedrock-eval-${AWS::AccountId}-${AWS::Region}'
+
+  BedrockEvalServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: BedrockModelEvalServiceRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:evaluation-job/*'
+      Policies:
+        - PolicyName: BedrockModelInvoke
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: BedrockModelInvoke
+                Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:CreateModelInvocationJob
+                  - bedrock:StopModelInvocationJob
+                Resource:
+                  - 'arn:aws:bedrock:*::foundation-model/*'
+                  - !Sub 'arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*'
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: S3BucketAccess
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:PutObject
+                  - s3:GetBucketLocation
+                  - s3:AbortMultipartUpload
+                  - s3:ListBucketMultipartUploads
+                Resource:
+                  - !GetAtt EvalBucket.Arn
+                  - !Sub '${EvalBucket.Arn}/*'
+
+Outputs:
+  BucketName:
+    Description: S3 bucket for evaluation datasets and results
+    Value: !Ref EvalBucket
+  BucketArn:
+    Description: S3 bucket ARN
+    Value: !GetAtt EvalBucket.Arn
+  ServiceRoleArn:
+    Description: IAM service role ARN for Bedrock evaluation jobs
+    Value: !GetAtt BedrockEvalServiceRole.Arn

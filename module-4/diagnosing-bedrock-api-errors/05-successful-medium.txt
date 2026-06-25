@@ -1,0 +1,6 @@
+Successful invocation
+aws bedrock-runtime converse \
+  --model-id eu.amazon.nova-micro-v1:0 \
+  --messages '[{"role":"user","content":[{"text":"Compare DynamoDB on-demand vs provisioned capacity modes. When should I use each?"}]}]' \
+  --inference-config '{"maxTokens":500}' \
+  --region eu-central-1

@@ -1,0 +1,22 @@
+Amazon S3 (Simple Storage Service) is an object storage service that offers industry-leading scalability, data availability, security, and performance. S3 stores data as objects within buckets. An object consists of a file and optionally any metadata that describes that file.
+
+Key features:
+- Storage classes: S3 Standard, S3 Intelligent-Tiering, S3 Standard-IA, S3 One Zone-IA, S3 Glacier Instant Retrieval, S3 Glacier Flexible Retrieval, S3 Glacier Deep Archive.
+- Durability: 99.999999999% (11 nines) durability across all storage classes.
+- Availability: 99.99% for S3 Standard.
+- Maximum object size: 5 TB. Objects larger than 5 GB should use multipart upload.
+- Bucket limit: 100 buckets per account by default (can request increase).
+- Versioning: Keep multiple versions of an object in the same bucket.
+- Lifecycle policies: Automatically transition objects between storage classes or delete them.
+- Server-side encryption: SSE-S3, SSE-KMS, SSE-C, and DSSE-KMS.
+- Access control: Bucket policies, IAM policies, ACLs, S3 Access Points.
+- Event notifications: Trigger Lambda, SQS, SNS, or EventBridge on object events.
+
+Common use cases: static website hosting, data lakes, backup and restore, archive, big data analytics, content distribution, and application hosting.
+
+Best practices:
+- Enable versioning for critical data.
+- Use lifecycle policies to optimize storage costs.
+- Enable server-side encryption by default.
+- Use S3 Access Points for shared datasets with different access patterns.
+- Monitor with S3 Storage Lens for visibility into usage and activity trends.

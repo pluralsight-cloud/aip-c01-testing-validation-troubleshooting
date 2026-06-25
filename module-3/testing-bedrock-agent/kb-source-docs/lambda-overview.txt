@@ -1,0 +1,23 @@
+AWS Lambda is a serverless compute service that runs your code in response to events and automatically manages the underlying compute resources. You pay only for the compute time you consume — there is no charge when your code is not running.
+
+Key features:
+- Supported runtimes: Python, Node.js, Java, .NET, Go, Ruby, and custom runtimes via Lambda layers.
+- Memory: 128 MB to 10,240 MB in 1 MB increments. CPU scales proportionally with memory.
+- Timeout: Maximum 15 minutes (900 seconds) per invocation.
+- Deployment package: 50 MB zipped, 250 MB unzipped. Use container images up to 10 GB.
+- Concurrency: 1,000 concurrent executions per region by default (can request increase).
+- Triggers: API Gateway, S3, DynamoDB Streams, SQS, SNS, EventBridge, Kinesis, and more.
+- Layers: Share code and dependencies across functions. Up to 5 layers per function.
+- Provisioned concurrency: Pre-initialize execution environments to reduce cold starts.
+- Lambda@Edge and CloudFront Functions: Run code at edge locations.
+- SnapStart: Reduce cold start latency for Java functions.
+
+Common use cases: API backends, data processing, real-time file processing, scheduled tasks, event-driven workflows, and microservices.
+
+Best practices:
+- Keep functions focused on a single task.
+- Minimize deployment package size for faster cold starts.
+- Use environment variables for configuration.
+- Set appropriate memory and timeout values.
+- Use reserved concurrency to prevent a single function from consuming all available concurrency.
+- Implement idempotency for event-driven architectures.

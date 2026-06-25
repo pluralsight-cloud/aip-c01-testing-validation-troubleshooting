@@ -1,0 +1,6 @@
+ValidationException — invalid model ID
+aws bedrock-runtime converse \
+  --model-id amazon.nova-nonexistent-v1:0 \
+  --messages '[{"role":"user","content":[{"text":"What is Amazon S3?"}]}]' \
+  --inference-config '{"maxTokens":200}' \
+  --region eu-central-1

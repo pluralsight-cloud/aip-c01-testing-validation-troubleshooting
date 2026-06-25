@@ -1,0 +1,23 @@
+Amazon Aurora Disaster Recovery and High Availability
+
+Aurora provides multiple layers of protection for your data. Understanding how these layers work together is essential for designing a resilient database architecture.
+
+Storage-Level Redundancy and Automatic Repair
+
+Aurora automatically replicates your data across three Availability Zones in a single AWS Region, maintaining six copies of your data. The storage layer is self-healing — if a segment of disk fails, Aurora automatically detects the failure and repairs the segment using data from the other copies. This happens transparently without any impact on database availability. The storage volume can grow automatically up to 128 TiB without any downtime or performance impact. Each 10 GB chunk of your database volume is replicated six ways across three AZs, and Aurora can tolerate the loss of up to two copies of data without affecting write availability and up to three copies without affecting read availability.
+
+Read Replicas and Failover Behavior
+
+Aurora supports up to 15 read replicas within the same Region. These replicas share the same underlying storage volume as the primary instance, which means replication lag is typically under 10 milliseconds. If the primary instance fails, Aurora automatically promotes one of the read replicas to become the new primary. The failover process typically completes in under 30 seconds. You can assign failover priority tiers (0-15) to each replica to control which replica gets promoted first. Tier 0 has the highest priority. If multiple replicas share the same priority tier, Aurora promotes the replica with the largest size.
+
+Cross-Region Disaster Recovery with Global Database
+
+For disaster recovery across AWS Regions, Aurora Global Database enables you to deploy a single Aurora database that spans multiple Regions. The primary Region handles all write operations, while up to five secondary Regions serve read traffic with typical replication lag under one second. In a disaster scenario, you can promote a secondary Region to full read-write capability. The recovery point objective (RPO) is typically one second, and the recovery time objective (RTO) is typically under one minute. Aurora Global Database uses dedicated infrastructure for replication, so it has no impact on your database performance. You can also use Global Database for low-latency global reads — applications in each Region read from a local Aurora cluster instead of making cross-Region calls.
+
+Backup and Point-in-Time Recovery
+
+Aurora continuously backs up your data to Amazon S3, providing a retention period of up to 35 days. You can restore your database to any point in time within the retention period, with a granularity of one second. These backups are automatic and do not affect database performance. Aurora also supports manual snapshots that you can retain indefinitely. For compliance requirements, you can copy snapshots across Regions and share them with other AWS accounts. The backups are incremental, so you only pay for the storage consumed by the changes since the last backup.
+
+Comparison with Multi-AZ RDS Deployments
+
+While standard RDS Multi-AZ deployments use synchronous replication to a standby instance in a different AZ, Aurora's approach is fundamentally different. Aurora replicates at the storage layer rather than the instance layer, which provides faster failover times (under 30 seconds vs. 60-120 seconds for RDS Multi-AZ) and supports more read replicas (15 vs. 5 for RDS). However, RDS Multi-AZ is available for more database engines (MySQL, PostgreSQL, MariaDB, Oracle, SQL Server) while Aurora only supports MySQL and PostgreSQL compatible editions.
