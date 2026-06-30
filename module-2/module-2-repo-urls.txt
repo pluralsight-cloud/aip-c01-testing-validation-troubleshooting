@@ -1,0 +1,9 @@
+1. Automated quality gates
+
+https://github.com/pluralsight-cloud/aip-c01-testing-validation-troubleshooting/tree/main/module-2/automated-quality-gates-with-step-functions
+
+2. Deployment validation
+
+https://github.com/pluralsight-cloud/aip-c01-testing-validation-troubleshooting/tree/main/module-2/deployment-validation-with-synthetic-user-workflows
+
+

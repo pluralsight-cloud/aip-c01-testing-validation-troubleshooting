@@ -1,0 +1,3 @@
+Diagnosing RAG retrieval problems
+
+https://github.com/pluralsight-cloud/aip-c01-testing-validation-troubleshooting/tree/main/module-5/diagnosing-rag-retrieval-problems

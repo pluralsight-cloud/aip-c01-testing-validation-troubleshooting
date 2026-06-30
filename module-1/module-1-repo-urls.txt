@@ -1,0 +1,3 @@
+Bedrock model evaluations
+
+https://github.com/pluralsight-cloud/aip-c01-testing-validation-troubleshooting/tree/main/module-1/model-evaluation-llm-as-a-judge

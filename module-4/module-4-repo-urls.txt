@@ -1,0 +1,7 @@
+1. CloudWatch GenAI Observability
+
+https://github.com/pluralsight-cloud/aip-c01-testing-validation-troubleshooting/tree/main/module-4/diagnosing-bedrock-api-errors
+
+2. Prompt refinement in Bedrock
+
+https://github.com/pluralsight-cloud/aip-c01-testing-validation-troubleshooting/tree/main/module-4/systematic-prompt-testing

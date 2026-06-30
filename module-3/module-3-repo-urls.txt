@@ -1,0 +1,9 @@
+1. Running a Bedrock Knowledge Base RAG evaluation job
+
+https://github.com/pluralsight-cloud/aip-c01-testing-validation-troubleshooting/tree/main/module-3/running-a-bedrock-kb-rag-evaluation-job
+
+2. Testing and evaluating a Bedrock agent
+
+https://github.com/pluralsight-cloud/aip-c01-testing-validation-troubleshooting/tree/main/module-3/testing-bedrock-agent
+
+
